@@ -1,0 +1,7 @@
+google-adk
+google-generativeai
+python-dotenv
+pydantic
+ulid-py
+httpx
+requests

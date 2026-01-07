@@ -1,0 +1,20 @@
+# Environments
+.env
+.env.*
+!example.env
+
+# Python & cache
+__pycache__/
+*.pyc
+.cache/
+.venv/
+
+
+# IDE
+.idea/
+.vscode/
+
+#local db files
+*.db
+mr_movie.db
+

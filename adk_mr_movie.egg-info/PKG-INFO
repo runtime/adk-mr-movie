@@ -1,0 +1,7 @@
+Metadata-Version: 2.4
+Name: adk-mr-movie
+Version: 0.1.0
+Requires-Dist: pydantic<3,>=2
+Requires-Dist: ulid-py>=1.1.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: httpx>=0.27.0
