@@ -6,6 +6,131 @@ This project focuses on deterministic memory, clear agent responsibilities, and 
 
 ---
 
+## todo
+### Ready to code
+
+1. Order of operations + specificity of “saving movies” ✅
+   * UC1 save intent (seen/current)
+     - a movie is suggested by the AGENT and accepted as a movie the user is going to watch or has seen.
+     - a movie is brought up by the USER as seen or currently watching
+       - check db for existing movie in catalog
+         - return results, close session if user agrees
+         - if no, lookup tmdb + hydrate + append catalog + append user prefs seen/current.
+           - return results, close session if user agrees
+       
+   * UC2 info intent (details)
+     - User asks for more information about a movie but may not yet choose to watch or may just be curious
+       - check db for existing movie in catalog
+         - return results, close session if user agrees
+         - if no, lookup tmdb + hydrate + append catalog.
+           - return results, continue session
+       
+   * UC3 incidental mention (ignore)
+     - Agent & User are discussing a movie and another movie title is mentioned as a comparison with no intention to watch.do nothing in regards to the movie being compared to as its not the subject movie
+         - do nothing
+     
+  * DB/catalog check first before TMDB
+  * 
+2. Movie catalog ✅
+   * canonical store keyed by your internal id
+   * supports presentation agent later
+3. TMDB cache ✅ 
+   - basically “catalog + last_fetched TTL” (so caching is almost free once catalog exists)
+
+4. Tenancy (single) ✅ 
+   - keep app_name="mr_movie" stable
+   - keep user_id stable for now (one “account”), but choose naming that won’t hurt later
+
+### Needs planning (agree)
+
+* Session selection logic (don’t just take [0])
+* 
+* Split “profile memory” vs “movie-night session context”
+* 
+* Update vs new row semantics (will change once you split scope)
+* 
+* Multi-profile matching / group session (later)
+* 
+
+### Do now
+#### A deterministic “upsert_movie” Memory tool
+This is the bridge between Research and Memory, and it’s what makes “info requests can cache” possible without polluting seen/current.
+
+(That tool is small and unlocks everything.)
+
+What I recommend: continue coding in increments (NOT a massive overhaul)
+
+Do one focused fix at a time in this order:
+
+### Phase 1 — Finish the “saving” semantics (right now)
+
+This is exactly what you said: we were mid-fix.
+
+Goal: make behavior predictable:
+
+“tell me about X” → may hydrate, does NOT add to seen/current
+
+“I’ve seen X” → hydrate if needed, THEN save to seen (dedupe)
+
+“X vs Y” → ignore unless user asks for details about Y explicitly
+
+This is mostly root-agent instruction + minor routing logic, no storage changes required yet.
+
+### Phase 2 — Add catalog (minimal, behind the scenes)
+
+Add:
+
+state["movie_catalog"] = {}
+
+Add Memory tool:
+
+upsert_movie(movie) (merge/overwrite provider info)
+
+Then wire:
+
+UC2 “info intent” can hydrate and upsert_movie (optional cache)
+
+UC1 “save intent” can hydrate, upsert_movie, then add_seen/add_current
+
+### Phase 3 — TTL cache
+
+Add:
+
+providers.tmdb.last_fetched
+
+If last_fetched < TTL → don’t call TMDB again
+
+That’s it. You’ll feel the system “snap into place” here.
+
+### Phase 4 — Session selection + profile vs session split (planning + light refactor)
+
+Only once the above is stable do we touch:
+
+how sessions are picked
+
+how profiles are represented (Netflix model)
+
+how group sessions work
+
+Because that’s the first “foundational” change. Everything before it is safe.
+
+So: should we outline everything then overhaul?
+
+I’d avoid that right now.
+
+## Do now
+
+Paste your current root agent instruction section that covers the three policies (UC1/UC2/UC3) as it exists today, and your current research agent tool names (search_movie, movie_details, etc.).
+
+Then I’ll give you:
+
+ - the updated instruction block (copy/paste)
+
+ - the minimal “decision rules” for when to call Research vs Memory
+
+ - the tiny upsert_movie tool stub (even if you don’t wire it yet)
+
+
 
 ## 🧠 Core Concepts
 
