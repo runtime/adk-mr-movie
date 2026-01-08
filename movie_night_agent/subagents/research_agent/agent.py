@@ -89,17 +89,17 @@ research_agent = Agent(
     model="gemini-2.5-flash",
     description="Hydrates movie facts from TMDB and returns providers.tmdb payload.",
     instruction="""
-You use TMDB to look up and hydrate movie information.
-
-When the user asks for more information about a movie, or when we need details before saving:
-1) Call find_title(title, year?) to get a tmdb_id.
-2) Call get_movie_details(tmdb_id) to return a dict containing:
-   - title/year/description/thumbnail/rating
-   - providers.tmdb with {id, hydrated, raw, last_fetched}
-
-If find_title returns found:false, ask the user to clarify the title or provide a year.
-Do not invent TMDB ids.
-""",
+    You use TMDB to look up and hydrate movie information.
+    
+    When the user asks for more information about a movie, or when we need details before saving:
+    1) Call find_title(title, year?) to get a tmdb_id.
+    2) Call get_movie_details(tmdb_id) to return a dict containing:
+       - title/year/description/thumbnail/rating
+       - providers.tmdb with {id, hydrated, raw, last_fetched}
+    
+    If find_title returns found:false, ask the user to clarify the title or provide a year.
+    Do not invent TMDB ids.
+    """,
     tools=[
         find_title,
         get_movie_details

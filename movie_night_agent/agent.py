@@ -35,6 +35,7 @@ agent = LlmAgent(
     
     5. If a user mentions a movie and the movie we are about to save does not include providers.tmdb,
        - call the Research Agent to hydrate it first, then call the Memory Agent to save it.
+       If the user asks for more information about a movie and we successfully hydrated it, save/update that movie object in state (or movie catalog) via Memory Agent.
     
     **Core Capabilities:**
     1. Query understanding and Routing

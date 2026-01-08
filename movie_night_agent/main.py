@@ -15,7 +15,8 @@ load_dotenv()
 db_url = "sqlite:///./mr_movie.db"
 # create the session service as a db service
 session_service = DatabaseSessionService(db_url=db_url)
-# check what methods it has to debut versioning
+
+# check what methods it has to debug versioning
 print("SessionService methods (session/state):",
       [m for m in dir(session_service) if "session" in m.lower() or "state" in m.lower()])
 
