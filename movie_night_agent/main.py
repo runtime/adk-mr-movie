@@ -1,11 +1,10 @@
 import asyncio
-
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from google.adk.runners import Runner
 from google.adk.sessions import DatabaseSessionService
 from .agent import agent # <-- mr movie agent
 from .utils.call_agent_async import call_agent_async # <-- async agent util for cli
-
 import inspect
 
 
@@ -24,8 +23,15 @@ print("update sig:", inspect.signature(session_service._update_session_state))
 
 # 2. define initial state
 # get the user & user prefs as initial state
+
+
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
 initial_state = {
     "user_name": None,
+
+    # --- profile-ish memory (for now; later this becomes profile scoped) ---
     "seen_movies": [],
     "current_movies": [],
     "preferred_genres": [],
@@ -33,7 +39,26 @@ initial_state = {
     "favorite_directors": [],
     "favorite_actors": [],
     "interaction_history": [],
+
+    # --- movie-night session memory (tab-like) ---
+    "movie_night": {
+        "status": "in_progress",          # in_progress | completed
+        "created_at": now_iso(),
+        "last_active_at": now_iso(),
+        "participants": [],               # future: ["profile:erik", "profile:gf"]
+        "subject_movie_id": None,         # the “current” movie being discussed (optional)
+        "chosen_movie_id": None,          # set when completed
+        "chosen_movie_title": None,       # convenience
+        "chosen_via_agent": None,         # true/false
+        "constraints": {                  # future-friendly
+            "mood": None,
+            "genres": [],
+            "max_runtime_min": None,
+            "providers": []
+        }
+    },
 }
+
 
 
 # create async main function

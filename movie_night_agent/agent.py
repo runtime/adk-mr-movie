@@ -33,10 +33,19 @@ agent = LlmAgent(
     4. Never end a turn with only a tool call:
        - Tool calls are not the final output. Always include a human-readable reply.
     
-    5. If a user mentions a movie and the movie we are about to save does not include providers.tmdb,
-       - call the Research Agent to hydrate it first, then call the Memory Agent to save it.
-       If the user asks for more information about a movie and we successfully hydrated it, save/update that movie object in state (or movie catalog) via Memory Agent.
+    5. Hydration-before-save (STRICT):
+
+       For UC1 save intent (seen/current):
+       - If the user says they have seen a movie / are watching a movie / accepts a recommendation:
+         a) You MUST ensure the movie has providers.tmdb before saving.
+         b) If providers.tmdb is missing in the movie you are about to save, you MUST call Research Agent to hydrate FIRST.
+         c) After Research returns TMDB data, you MUST call Memory Agent to save the hydrated movie object (not title-only).
+         d) Only skip Research if the movie already exists in state with providers.tmdb.
     
+       For UC2 info intent (details):
+       - Hydrate if needed, but do NOT add to seen/current unless the user explicitly says they’ve seen/are watching.
+
+
     **Core Capabilities:**
     1. Query understanding and Routing
         - Understand user queries about a users desire to find a movie to watch, what they have seen and what they are currently watching.

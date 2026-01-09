@@ -1,5 +1,5 @@
 # memory Agent
-
+from datetime import datetime, timezone
 from google.adk.agents import Agent
 from google.adk.tools.tool_context import ToolContext
 from typing import Any, Dict, List, Optional
@@ -27,6 +27,28 @@ def _find_existing_index(items: list[Dict[str, Any]], movie_id: str, sig: str) -
 
 # helpers _slug, _signature, _find_existing_index above
 
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+def touch_movie_night(tool_context: ToolContext) -> dict:
+    """Update movie_night.last_active_at each turn."""
+    mn = tool_context.state.get("movie_night") or {}
+    mn["last_active_at"] = now_iso()
+    if "status" not in mn:
+        mn["status"] = "in_progress"
+    tool_context.state["movie_night"] = mn
+    return {"action": "touch_movie_night", "movie_night": mn}
+
+def complete_movie_night(chosen_movie_title: str, tool_context: ToolContext) -> dict:
+    """Mark the current movie night as completed."""
+    mn = tool_context.state.get("movie_night") or {}
+    mn["status"] = "completed"
+    mn["last_active_at"] = now_iso()
+    mn["chosen_movie_title"] = chosen_movie_title
+    mn["chosen_via_agent"] = None  # set true/false later if you want
+    tool_context.state["movie_night"] = mn
+    return {"action": "complete_movie_night", "movie_night": mn}
+
 def add_seen_movie(seen_movie: dict, tool_context: ToolContext) -> dict:
     """
     Accepts a minimal movie dict from the model and stores a normalized Movie record
@@ -34,7 +56,15 @@ def add_seen_movie(seen_movie: dict, tool_context: ToolContext) -> dict:
     """
     print(f"--- Tool: add_seen_movie called for '{seen_movie}' ---")
 
-    title = (seen_movie.get("title") or seen_movie.get("movie_id") or "").strip()
+    title = (seen_movie.get("title") or "").strip()
+    providers = seen_movie.get("providers") or {}
+
+    # If the save intent came through root, we expect hydration
+    # If not hydrated, store it but mark as pending hydration
+    if title and not providers.get("tmdb"):
+        seen_movie.setdefault("tags", {})
+        seen_movie["tags"]["needs_hydration"] = True
+
     year = seen_movie.get("year", None)
     overview = seen_movie.get("description", "") or ""
     poster = seen_movie.get("thumbnail", "") or ""
@@ -88,6 +118,71 @@ def add_seen_movie(seen_movie: dict, tool_context: ToolContext) -> dict:
         "message": msg,
         "count": len(seen_movies),
     }
+
+
+
+# def add_seen_movie(seen_movie: dict, tool_context: ToolContext) -> dict:
+#     """
+#     Accepts a minimal movie dict from the model and stores a normalized Movie record
+#     using our internal ID plus nested providers.
+#     """
+#     print(f"--- Tool: add_seen_movie called for '{seen_movie}' ---")
+#
+#     title = (seen_movie.get("title") or seen_movie.get("movie_id") or "").strip()
+#     year = seen_movie.get("year", None)
+#     overview = seen_movie.get("description", "") or ""
+#     poster = seen_movie.get("thumbnail", "") or ""
+#     watched = seen_movie.get("date_watched", "") or ""
+#     rating_val = seen_movie.get("rating", 0) or 0
+#
+#     # Build our canonical Movie
+#     movie = Movie(
+#         title=title or "Untitled",
+#         year=year,
+#         overview=overview,
+#         poster=poster,
+#     )
+#     movie.tags.status = "seen"
+#     movie.tags.source = "user"
+#     movie.dates.watched = watched
+#     movie.rating.value = float(rating_val) if str(rating_val).strip() != "" else 0
+#     movie.rating.source = "user"
+#
+#     # If a provider object was passed (future TMDB), keep it
+#     providers = seen_movie.get("providers")
+#     if isinstance(providers, dict):
+#         # best-effort: trust provider dict shape and store
+#         for name, rec in providers.items():
+#             if isinstance(rec, dict):
+#                 movie.providers[name] = ProviderRecord(**rec)
+#
+#     # Dedupe based on internal id OR signature
+#     sig = _signature(movie.title, movie.year)
+#     seen_movies = tool_context.state.get("seen_movies", [])
+#     idx = _find_existing_index(seen_movies, movie.id, sig)
+#
+#     payload = movie.model_dump()
+#     payload["sig"] = sig
+#
+#     if idx >= 0:
+#         # replace existing entry (refresh)
+#         seen_movies[idx] = payload
+#         action = "updated_seen_movie"
+#         msg = f'Updated seen movie: "{movie.title}"'
+#     else:
+#         seen_movies.append(payload)
+#         action = "added_seen_movie"
+#         msg = f'Added seen movie: "{movie.title}"'
+#
+#     tool_context.state["seen_movies"] = seen_movies
+#
+#     return {
+#         "action": action,
+#         "movie": payload,
+#         "message": msg,
+#         "count": len(seen_movies),
+#     }
+#
 
 
 
@@ -228,67 +323,70 @@ memory_agent = Agent(
     model="gemini-2.5-flash",
     description="An agent with a persistent memory",
     instruction="""
-    You remember users seen and current movies across conversations.
-    You will CALL add_seen_movie when a user expresses they have seen a movie.
-    you will CALL view_seen_movies when a user asks you to list what they have seen.
-    you will CALL add_current_movie when a user says yes to a movie you recommended. 
-    you will CALL view_current_movies when the user asks what movies they are watching.
-
-    The user's information is stored in state:
-    - User's name: {user_name}
-    - seen_movies: {seen_movies}
-    - current_movies: {current_movies}
-    - preferred_genres: {preferred_genres}
-    - disliked_genres: {disliked_genres}
-    - favorite_directors: {favorite_directors}
-    - favorite_actors: {favorite_actors}
-    - interaction_history: {interaction_history}
+    You are a persistence-only agent responsible for updating and reading user memory.
+    You do NOT reason about recommendations or conversation flow. You only save and retrieve data.
     
-    Movie objects in seen_movies/current_movies use this schema:
-    - id (our internal id), title, year (optional), overview/poster (optional), rating, dates, tags, providers (tmdb/imdb/etc), sig (dedupe signature).
-
-
-    You can help users manage their seen movies with the following capabilities:
-    1. Add seen movies
-    2. View seen movies
-    3. Add currently watching movies
-    4. View current watching movies
-    5. Update the user's name
-
-    Always be friendly and address the user by name. If you don't know their name yet,
-    use the update_user_name tool to store it when they introduce themselves.
-
-    **SEEN MOVIE MANAGEMENT GUIDELINES:**
-
-    When the user asks to see the list of movies they have seen, you need to be smart about finding the seen movie list:
-
-    6. For viewing:
-        - Always use the view_seen_movies tool when the user asks to see their movies
-        - Format the response in a numbered list for clarity
-        - If there are no movies, suggest adding some
-
-    7. For addition:
-        - If year is unknown, omit it (do not guess).
-        - Do not invent provider IDs; providers are added later by the Research Agent.
-        - Extract the actual movie title when the user expresses having seen a movie
-        - Remove phrases like "I have seen" or "loved that movie"
-
-     **CURRENT MOVIE MANAGEMENT GUIDELINES:**
-
-    When the user asks to see the list of movies they are watching, you need to be smart about finding the current movie list:
-
-    8. For viewing:
-       - Always use the view_current_movies tool when the user asks to see the movies they are currently watching
-       - Format the response in a numbered list for clarity
-       - If there are no movies, suggest adding some
-
-    9. For addition:
-       - Extract the actual movie title when the user expresses they are watching a movie
-       - Remove phrases like "I am watching" or "I started"
-       - Focus on the title itself
-
+    ### Core Responsibilities
+    - Persist user identity, movie lists, and movie-night session state
+    - Read memory when asked
+    - Never invent data or infer intent beyond explicit user statements
+    
+    ### Mandatory Tool Usage
+    - CALL touch_movie_night at the start of any turn where the user interacts.
+    - CALL complete_movie_night only when the user explicitly confirms what they are going to watch tonight
+      (e.g. “we’re going to watch X”, “we decided on X”, “we picked X”).
+    
+    ### Movie Persistence
+    - CALL add_seen_movie when the user explicitly says they have seen a movie.
+    - CALL add_current_movie when the user explicitly says they are watching a movie
+      OR accepts a recommendation to watch.
+    - CALL view_seen_movies when the user asks what they have seen.
+    - CALL view_current_movies when the user asks what they are currently watching.
+    
+    ### User Identity
+    - If the user provides their name and state['user_name'] is empty,
+      CALL update_user_name to save it.
+    
+    ### Data Rules (CRITICAL)
+    - Never guess or fabricate movie details.
+    - If year is unknown, omit it.
+    - Do NOT invent provider IDs.
+    - Providers (tmdb/imdb/etc) are added only after Research Agent hydration.
+    - Only extract the movie title from user statements (remove phrases like
+      “I’ve seen”, “I’m watching”, “we loved”, etc).
+    
+    ### Movie Object Schema
+    Movies stored in seen_movies or current_movies use this schema:
+    - id (internal id)
+    - title
+    - year (optional)
+    - overview / poster (optional)
+    - rating (optional)
+    - dates (watched/added)
+    - tags
+    - providers (tmdb, imdb, etc — optional)
+    - sig (dedupe signature)
+    
+    ### State Access
+    User data is stored in state:
+    - user_name
+    - seen_movies
+    - current_movies
+    - preferred_genres
+    - disliked_genres
+    - favorite_directors
+    - favorite_actors
+    - interaction_history
+    - movie_night
+    
+    ### Tone
+    - Be neutral and factual.
+    - Do not generate conversational replies.
+    - Do not ask follow-up questions.
     """,
     tools=[
+        touch_movie_night,
+        complete_movie_night,
         add_seen_movie,
         view_seen_movies,
         add_current_movie,
